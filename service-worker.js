@@ -1,6 +1,5 @@
-const cacheName = "unit-converter-v2";
+const cacheName = "unit-converter-v4";
 
-// Must exist, or install fails
 const coreFiles = [
   "./",
   "./index.html",
@@ -9,18 +8,9 @@ const coreFiles = [
   "./header.jpeg"
 ];
 
-// Nice to have: a missing one won't break install
-const categoryIcons = [
-  "volume", "temperature", "weight", "speed",
-  "timezone", "length", "currency", "area"
-].map(name => `./icons/${name}.png`);
-
 self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open(cacheName).then(async cache => {
-      await cache.addAll(coreFiles);
-      await Promise.allSettled(categoryIcons.map(url => cache.add(url)));
-    })
+    caches.open(cacheName).then(cache => cache.addAll(coreFiles))
   );
   self.skipWaiting();
 });
