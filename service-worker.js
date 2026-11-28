@@ -1,4 +1,4 @@
-const cacheName = "unit-converter-v4";
+const cacheName = "unit-converter-v5";
 
 const coreFiles = [
   "./",
