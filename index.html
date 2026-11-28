@@ -20,12 +20,6 @@
 
   <main class="page">
 
-    <!-- Category Card -->
-    <section class="card">
-      <h2 class="card-title">choose category</h2>
-      <div id="categoryList" class="category-grid"></div>
-    </section>
-
     <!-- Converter Card -->
     <section class="card converter-card">
       <input id="inputValue" type="text" inputmode="decimal" placeholder="enter value">
@@ -33,6 +27,7 @@
 
       <div class="unit-row">
         <select id="fromUnit"></select>
+        <button id="swapIcon" class="swap-icon" aria-label="swap units">⇄</button>
         <select id="toUnit"></select>
       </div>
 
@@ -42,7 +37,14 @@
       </div>
 
       <button id="swapBtn" class="action-btn">swap units</button>
+      <button id="mixedBtn" class="action-btn secondary" style="display:none;">whole parts: off</button>
       <button id="roundBtn" class="action-btn" style="display:none;">round</button>
+    </section>
+
+    <!-- Category Card -->
+    <section class="card">
+      <h2 class="card-title">select category</h2>
+      <div id="categoryList" class="category-grid"></div>
     </section>
 
   </main>
@@ -132,7 +134,7 @@
   input,
   select {
     font-family: inherit;
-    font-size: 1.2rem;
+    font-size: 1.7rem;
     color: #72C7FC;
     background-color: #02519C;
     border: 2px solid #3A8AD0;
@@ -155,15 +157,46 @@
 
   .unit-row {
     display: flex;
-    gap: 12px;
+    align-items: center;
+    gap: 8px;
     margin: 28px 0;
+  }
+
+  .swap-icon {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+    font-size: 1.5rem;
+    color: #FFFFFF;
+    background: linear-gradient(180deg, #3A5BA0, #2C447A);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .swap-icon:active {
+    transform: scale(0.92);
+  }
+
+  /* Time picker (timezone category) */
+  input[type="time"] {
+    min-height: 62px;
+  }
+
+  input[type="time"]::-webkit-date-and-time-value {
+    text-align: center;
   }
 
   select {
     flex: 1;
     min-width: 0;
-    padding: 10px 6px;
-    font-size: 1rem;
+    padding: 12px 4px;
+    font-size: 1.5rem;
     text-align-last: center;
     text-overflow: ellipsis;
   }
@@ -186,6 +219,10 @@
     font-size: 2.2rem;
     min-height: 2.2rem;
     word-break: break-word;
+  }
+
+  #result.small {
+    font-size: 1.7rem;
   }
 
   .fraction-line {
@@ -215,6 +252,16 @@
   .action-btn:active {
     transform: scale(0.97);
   }
+
+  .action-btn.secondary {
+    padding: 12px 20px;
+    font-size: 1.15rem;
+    border: 2px solid transparent;
+  }
+
+  .action-btn.secondary.on {
+    border-color: #72C7FC;
+  }
 </style>
 
 
@@ -231,7 +278,7 @@ const unitLabels = {
   pints: "pt",
   quarts: "qt",
   gallons: "gal",
-  milliliters: "ml",
+  milliliters: "mL",
   liters: "L",
 
   sqft: "ft²",
@@ -284,7 +331,7 @@ const prettyUnits = {
   pints: "pt",
   quarts: "qt",
   gallons: "gal",
-  milliliters: "ml",
+  milliliters: "mL",
   liters: "L",
 
   sqft: "ft²",
@@ -355,6 +402,29 @@ class ConverterEngine {
       currency: ["EUR", "USD"],
       area: ["sqm", "sqft"]
     };
+
+    // "Whole parts" chains: [bigger unit, smaller unit] for each target unit
+    this.mixedChains = {
+      volume: {
+        gallons: ["gallons", "quarts"],
+        quarts: ["quarts", "pints"],
+        pints: ["pints", "cups"],
+        cups: ["cups", "tablespoons"],
+        ounces: ["ounces", "tablespoons"],
+        tablespoons: ["tablespoons", "teaspoons"],
+        liters: ["liters", "milliliters"]
+      },
+      length: {
+        miles: ["miles", "feet"],
+        feet: ["feet", "inches"],
+        km: ["km", "m"],
+        m: ["m", "cm"]
+      },
+      weight: {
+        pounds: ["pounds", "ounces"],
+        kilograms: ["kilograms", "grams"]
+      }
+    };
   }
 
   getUnits(category) {
@@ -363,6 +433,43 @@ class ConverterEngine {
 
   getDefaultUnits(category) {
     return this.defaults[category] || [];
+  }
+
+  supportsMixed(category) {
+    return !!this.mixedChains[category];
+  }
+
+  // Turns a result like 3.3 ft into "3 ft 4 in". Returns null if not possible.
+  toMixed(category, value, to) {
+    const chain = this.mixedChains[category] && this.mixedChains[category][to];
+    if (!chain) return null;
+
+    const [big, small] = chain;
+    const sign = value < 0 ? "-" : "";
+    const abs = Math.abs(value);
+
+    const ratio = Math.round(this.convert(category, 1, big, small));
+    const totalSmall = Math.round(this.convert(category, abs, big, small));
+    if (totalSmall === 0) return null;
+
+    const whole = Math.floor(totalSmall / ratio);
+    const rest = totalSmall % ratio;
+
+    const parts = [];
+    if (whole > 0) parts.push(`${whole} ${prettyUnits[big]}`);
+    if (rest > 0) parts.push(`${rest} ${prettyUnits[small]}`);
+
+    const separator = category === "volume" ? " + " : " ";
+    return sign + parts.join(separator);
+  }
+
+  // Time zones: minutes after midnight in, minutes + day shift out
+  convertTime(minutes, from, to) {
+    const offsets = { UTC: 0, MST: -7, CST: -6, EST: -5, PST: -8 };
+    const total = minutes + (offsets[to] - offsets[from]) * 60;
+    const dayShift = Math.floor(total / 1440);
+    const wrapped = ((total % 1440) + 1440) % 1440;
+    return { minutes: wrapped, dayShift };
   }
 
   convert(category, value, from, to) {
@@ -428,17 +535,6 @@ class ConverterEngine {
         return value * len[from] / len[to];
       }
 
-      /* TIMEZONE */
-      case "timezone": {
-        const offsets = {
-          UTC: 0,
-          MST: -7,
-          CST: -6,
-          EST: -5,
-          PST: -8
-        };
-        return value + (offsets[to] - offsets[from]);
-      }
 
       /* AREA */
       case "area": {
@@ -504,6 +600,17 @@ function approximateFraction(value, denominators) {
 }
 
 /* -----------------------------
+   TIME FORMAT (12-hour)
+------------------------------*/
+function formatTime(totalMinutes) {
+  const h24 = Math.floor(totalMinutes / 60);
+  const min = totalMinutes % 60;
+  const suffix = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 || 12;
+  return `${h12}:${String(min).padStart(2, "0")} ${suffix}`;
+}
+
+/* -----------------------------
    UI BINDER
 ------------------------------*/
 class UIBinder {
@@ -526,10 +633,13 @@ class UIBinder {
     this.swapBtn = document.getElementById("swapBtn");
     this.roundBtn = document.getElementById("roundBtn");
     this.negBtn = document.getElementById("negBtn");
+    this.mixedBtn = document.getElementById("mixedBtn");
+    this.swapIcon = document.getElementById("swapIcon");
 
     this.categoryList = document.getElementById("categoryList");
 
     this.currentCategory = "volume";
+    this.mixedMode = false;
   }
 
   init() {
@@ -543,6 +653,9 @@ class UIBinder {
     this.swapBtn.addEventListener("click", () => this.handleSwap());
     this.roundBtn.addEventListener("click", () => this.handleRound());
     this.negBtn.addEventListener("click", () => this.handleNegative());
+    this.swapIcon.addEventListener("click", () => this.handleSwap());
+    this.mixedBtn.addEventListener("click", () => this.toggleMixed());
+    this.inputEl.addEventListener("change", () => this.updateResult());
   }
 
   populateCategoryButtons() {
@@ -573,9 +686,18 @@ class UIBinder {
 
   updateResult() {
     const raw = this.inputEl.value.trim();
-    const value = parseFloat(raw);
     const from = this.fromEl.value;
     const to = this.toEl.value;
+
+    this.resultEl.classList.remove("small");
+
+    // Time zones work with a clock time instead of a number
+    if (this.currentCategory === "timezone") {
+      this.updateTimeResult(raw, from, to);
+      return;
+    }
+
+    const value = parseFloat(raw);
 
     if (raw === "" || isNaN(value)) {
       this.resultEl.textContent = "";
@@ -585,6 +707,17 @@ class UIBinder {
 
     const result = this.engine.convert(this.currentCategory, value, from, to);
     const prettyUnit = prettyUnits[to];
+
+    // Whole parts mode: 3.3 ft -> 3 ft 4 in
+    if (this.mixedMode) {
+      const mixed = this.engine.toMixed(this.currentCategory, result, to);
+      if (mixed) {
+        this.resultEl.textContent = mixed;
+        this.resultEl.classList.add("small");
+        this.fractionEl.textContent = "";
+        return;
+      }
+    }
 
     this.resultEl.textContent = `${result.toFixed(2)} ${prettyUnit}`;
 
@@ -602,6 +735,32 @@ class UIBinder {
     } else {
       this.fractionEl.textContent = "";
     }
+  }
+
+  updateTimeResult(raw, from, to) {
+    const parts = raw.split(":");
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+
+    if (raw === "" || isNaN(h) || isNaN(m)) {
+      this.resultEl.textContent = "";
+      this.fractionEl.textContent = "";
+      return;
+    }
+
+    const res = this.engine.convertTime(h * 60 + m, from, to);
+    this.resultEl.textContent = formatTime(res.minutes);
+
+    if (res.dayShift > 0) this.fractionEl.textContent = "next day";
+    else if (res.dayShift < 0) this.fractionEl.textContent = "previous day";
+    else this.fractionEl.textContent = "";
+  }
+
+  toggleMixed() {
+    this.mixedMode = !this.mixedMode;
+    this.mixedBtn.textContent = this.mixedMode ? "whole parts: on" : "whole parts: off";
+    this.mixedBtn.classList.toggle("on", this.mixedMode);
+    this.updateResult();
   }
 
   handleSwap() {
@@ -636,8 +795,22 @@ class UIBinder {
   }
 
   setCategory(category) {
+    const wasTime = this.currentCategory === "timezone";
+    const isTime = category === "timezone";
+
     this.currentCategory = category;
     this.populateUnits(category);
+
+    // Timezone uses a time picker (default 12:00 AM); everything else uses numbers
+    if (isTime) {
+      this.inputEl.type = "time";
+      this.inputEl.removeAttribute("inputmode");
+      if (!wasTime) this.inputEl.value = "00:00";
+    } else {
+      this.inputEl.type = "text";
+      this.inputEl.setAttribute("inputmode", "decimal");
+      if (wasTime) this.inputEl.value = "";
+    }
 
     // Highlight the active category button
     this.categoryList.querySelectorAll(".cat-btn").forEach(btn => {
@@ -647,6 +820,7 @@ class UIBinder {
     // Category-specific buttons
     this.negBtn.style.display = category === "temperature" ? "flex" : "none";
     this.roundBtn.style.display = category === "length" ? "flex" : "none";
+    this.mixedBtn.style.display = this.engine.supportsMixed(category) ? "flex" : "none";
 
     this.updateResult();
   }
