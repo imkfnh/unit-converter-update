@@ -37,7 +37,7 @@
       </div>
 
       <button id="swapBtn" class="action-btn">swap units</button>
-      <button id="mixedBtn" class="action-btn secondary" style="display:none;">whole parts: off</button>
+      <button id="mixedBtn" class="action-btn secondary" style="display:none;">whole parts</button>
       <button id="roundBtn" class="action-btn" style="display:none;">round</button>
     </section>
 
@@ -254,9 +254,12 @@
   }
 
   .action-btn.secondary {
-    padding: 12px 20px;
-    font-size: 1.15rem;
+    width: calc((100% - 20px) / 3);
+    margin: 14px auto 0;
+    padding: 12px 4px;
+    font-size: 0.95rem;
     border: 2px solid transparent;
+    border-radius: 14px;
   }
 
   .action-btn.secondary.on {
@@ -758,7 +761,6 @@ class UIBinder {
 
   toggleMixed() {
     this.mixedMode = !this.mixedMode;
-    this.mixedBtn.textContent = this.mixedMode ? "whole parts: on" : "whole parts: off";
     this.mixedBtn.classList.toggle("on", this.mixedMode);
     this.updateResult();
   }
